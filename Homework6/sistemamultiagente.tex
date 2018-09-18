@@ -1,0 +1,185 @@
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{float}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage[left=2cm,right=2cm,top=2cm,bottom=2cm]{geometry}
+
+\lstset{ 
+  language=R,
+  basicstyle=\tiny\ttfamily,
+  numbers=left,
+  numberstyle=\tiny\color{Blue},
+  stepnumber=1,
+  numbersep=5pt,
+  backgroundcolor=\color{white},
+  showstringspaces=false,
+  showtabs=false,
+  frame=single,
+  rulecolor=\color{black},
+  tabsize=2,
+  captionpos=b,
+  breaklines=true,
+  breakatwhitespace=false,        
+  keywordstyle=\color{RoyalBlue},
+  commentstyle=\color{YellowGreen},
+  stringstyle=\color{ForestGreen}
+}
+
+\author{Sistema multiagente \\ 1455175: Ángel Moreno}
+\title{Simulación de Sistemas \\ Práctica 6}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+En esta práctica se simula un sistema multiagente secuencial y luego compararlo con una simulación en paralelo, se observar y prueba que no cambia la distribución de la simulación en el efecto de un variable respuesta.
+\end{abstract}
+
+\section{Introducción}
+
+En un sistema multiagente se tiene un conjunto de entidades con estados internos que reaccionan entre ellos mismos cambiando sus estados. Se maneja tres estados internos, conocido como el modelos \textbf{SIR}: \textbf{s}usceptibles, \textbf{i}nfectados y \textbf{r}ecuperados.
+
+Para los $n$ agentes se tiene una probabilidad de inicio de contagio $p_{i}$ y una probabilidad de recuperación $p_{r}$. Supongo que, por simplicidad, la infección produce inmunidad en los recuperado, solamente los susceptibles serán infectados. La probabilidad de contagio $p_{c}$ es proporcional a la distancia euclidiana entre dos agentes $d(i, j)$ como sigue:
+\[ p_{c} = 
+	\begin{cases}
+	0, & \text{si } d(i, j) \geq r, \\
+	\frac{r - d}{d} & \text{en otro caso,}
+	\end{cases}
+\]
+donde $r$ es un umbral.
+
+Los agentes se encuentran en el subespacio $\mathit{l} \times \mathit{l} \subset \mathbb{R}^{2}$ con  velocidad y dirección. Se posicionan de forma uniforme al azar en el subespacio mencionado considerándolo como un torus.
+
+\section{Tarea}
+
+Identifica partes de los cálculos que se pueden implementar de formas más eficientes y en particular paraleliza todo lo que conviene con cualquiera de los dos paquetes que hemos visto. Asegura con pruebas estadísticas adecuadas que no se haya modificado el comportamiento del modelo matemático de la simulación. Estudia además el efecto de la probabilidad $p_{i}$ (de 0.1 a 0.9 en pasos de 0.1) en el porcentaje máximo de infectados durante la simulación.
+
+\section{Simulacion}
+
+Los parámetros que se utilizan son: el tamaño de la cuadricula de $\mathit{l} = 1.5$, un total de $n = 50$ agentes, para cada agente una velocidad entre $(- \mathit{l}/30, \mathit{l}/30)$ para cada componente $(x, y)$, probabilidades para inicio de infección del agente de $0.1, 0.2,..., 0.9$, el radio del umbral de $r = 0.1$, la probabilidad de recuperación de $p_{r} = 0.02$ y un tiempo de $100$ iteraciones.\\
+
+\newpage
+
+Primero muestro el pseudocodigo de la simalucion:
+
+\rule{120mm}{0.1mm} 
+
+Pseudocodigo  Sistema Multiagente
+
+\rule{120mm}{0.1mm} 
+
+\textbf{Entrada:} Conjunto de datos de $n$ agentes con sus componentes $(x, y)$, velocidad y estado.
+
+\textbf{Salida:} Porcentajes de infeccion en $100$ tiempos.
+\begin{enumerate}
+	\item \textbf{for} $i \leftarrow 1$ to $tmax = 100$ \textbf{do}
+	\item \hspace{5mm} \% epidemia $\leftarrow$ agregamos porcentaje de infectados.
+	\item \hspace{5mm} Exploramos quienes se van a contagiar.
+	\item \hspace{5mm} Actualizamos.
+\end{enumerate}
+
+\rule{120mm}{0.1mm} \\
+
+La simulación secuencial y la simulación trabajando en paralelo se ejecutaron con códigos donde la mayor parte son similares excepto la parte de exploración de los contagios. El siguiente código es como se ejecuto en la simulación secuencial.
+
+\begin{lstlisting}
+ contagios <- rep(FALSE, n)
+    for (i in 1:n) { # posibles contagios
+        a1 <- agentes[i, ]
+        if (a1$estado == "I") { # desde los infectados
+            for (j in 1:n) {
+                if (!contagios[j]) { # aun sin contagio
+                    a2 <- agentes[j, ]
+                    if (a2$estado == "S") { # hacia los susceptibles
+                        dx <- a1$x - a2$x
+                        dy <- a1$y - a2$y
+                        d <- sqrt(dx^2 + dy^2)
+                        if (d < r) { # umbral
+                            p <- (r - d) / r
+                            if (runif(1) < p) {
+                                contagios[j] <- TRUE
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+\end{lstlisting}
+
+Esta parte del código se observa que tiene complejidad $\mathcal{O}(n^{2})$. El siguiente código se ejecuto en la simulación en paralelo.
+
+\begin{lstlisting}
+contagios <- rep(FALSE, n)
+    suceptibles <- dim(agentes[agentes$estado == "S",])[1]
+    if (suceptibles != 0) {
+      posibles <- as.numeric(row.names(agentes[which(agentes$estado == "I"),])) #solo los infectados
+      for (i in posibles) { # propagar sobre los infectados
+        a1 <- agentes[i, ]
+        candidatos <- agentes[which(contagios %in% F),] # solo propagar con los FALSE
+        elegidos <- as.numeric(row.names(candidatos[which(candidatos$estado == "S"),])) #solo los suceptibles
+        for (j in elegidos) {
+          a2 <- agentes[j, ]
+          dx <- a1$x - a2$x
+          dy <- a1$y - a2$y
+          d <- sqrt(dx^2 + dy^2)
+          if (d < r) { # umbral
+            p <- (r - d) / r
+            if (runif(1) < p) {
+              contagios[j] <- TRUE
+            }
+          }
+        } 
+      }
+    }
+\end{lstlisting}
+
+Esta modificación del código empieza preguntado si existen susceptibles a cuales infectar es eficaz para probabilidades de inicio de infección grandes y haciedo exploración solo desde los agentes infectados hacia los susceptibles sin hacer la exploración sobre todos los agentes. \\
+
+Se ejecuto 40 replicas de cada probabilidad en la simulación secuencial y en paralelo, se calculo una media para cada tiempo sobre el porcentage de infeccion de las 40 replicas obteniendo la figura \ref{fig:ejemplo}
+
+\begin{figure}[H]
+   \centering
+    \includegraphics[scale = 0.40]{medias}
+  \caption{Gráfica de lineas de la simulación secuencia junto a el paralelo para cada probabilidad .}
+  \label{fig:ejemplo}
+\end{figure}
+
+Se concluye gráficamente de la figura \ref{fig:ejemplo} que ni la simulación secuencial y la del paralelo no afectan la simulación, ademas se observan porcentajes máximos de infección alcanzado en tiempos de entre (30, 50) en probabilidades de 0.1, 0.2 y 0.3, para las demás probabilidades los porcentajes máximos se alcanzan en tiempos menores a 30.\\
+
+Se verifica bajo la prueba estadística no parametrica de Kruskal-Wallis con $H_{0}$: los datos vienen de la misma distribución, es decir, la ejecución secuencial y en paralelo no afectan la simulación.
+
+\begin{lstlisting}
+> kruskal.test(PorInfectados ~ Categorias, data = Resultados)
+
+    Kruskal-Wallis rank sum test
+
+data:  x by Group.2
+Kruskal-Wallis chi-squared = 0.032494, df = 1, p-value = 0.8569
+\end{lstlisting}
+
+Para un nivel de significación $\alpha = 0.05$ la hipótesis nula se acepta, es decir la simulación no se ve afectada por lo secuencial y lo paralelo.
+
+\begin{thebibliography}{X}
+\bibitem{elisa} \textsc{Schaeffer E.} \textit{R paralelo: simulación and análisis de datos, 2018.} \\
+\texttt{https://elisa.dyndns-web.com/teaching/comp/par/ }
+\bibitem{kurt} \textsc{Kurt Will.} \textit{6 Neat Tricks with Monte Carlo Simulations — Count Bayesie; Probably a probability blog, Marzo 24, 2015.} \\
+\texttt{https://www.countbayesie.com/blog/2015/3/3/6-amazing-trick-with-monte-carlo-simulations}
+\bibitem{lalo} \textsc{Valdes Eduardo.} \textit{Repository of Github, 2017.} \\
+\texttt{https://github.com/eduardovaldesga/SimulacionSistemas}
+\bibitem{bety} \textsc{Garcia Beatriz.} \textit{Repository of Github, 2017.} \\
+\texttt{https://github.com/BeatrizGarciaR/SimulacionSistemas}
+\bibitem{lili} \textsc{Saus Liliana.} \textit{Repository of Github, 2018.} \\
+\texttt{https://github.com/pejli/simulacion}
+\end{thebibliography}
+
+\end{document}
