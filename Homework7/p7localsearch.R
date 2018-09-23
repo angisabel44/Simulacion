@@ -1,4 +1,5 @@
 source("maximizar.R")
+
 g <- function(x, y) {
   return(((x + 0.5)^4 - 30 * x^2 - 20 * x + (y + 0.5)^4 - 30 * y^2 - 20 * y)/100)
 }
@@ -7,10 +8,11 @@ resultados <- data.frame()
 
 low <- -3
 high <- -low
-step <- 0.3
+puntos <- 15
+wolfram <- 0.0666822
 
-tiempos <- c(seq(10, 20, 2), 23, 26, 30)
-cantidadpuntos <- c(15, 20, 30, 50)
+maxsteps <- 0.3^(5:1)
+tiempos <- 2^(5:11)
 
 replicas <- 30
 
@@ -18,27 +20,35 @@ suppressMessages(library(parallel))
 cluster <- makeCluster(detectCores())
 clusterExport(cluster, "low")
 clusterExport(cluster, "high")
-clusterExport(cluster, "step")
+clusterExport(cluster, "puntos")
+clusterExport(cluster, "wolfram")
 clusterExport(cluster, "g")
 clusterExport(cluster, "maximizar")
 
-for (puntos in cantidadpuntos) {
-clusterExport(cluster, "puntos")
+for (step in maxsteps) {
+  clusterExport(cluster, "step")
   for (tmax in tiempos) {
     clusterExport(cluster, "tmax")
     resultado <- parSapply(cluster, 1:replicas, maximizar)
     iteraciones <- t(resultado)
-    datos <- cbind(rep(puntos, replicas), rep(tmax, replicas), 1:replicas, iteraciones)
+    datos <- cbind(rep(step, replicas), rep(tmax, replicas), 1:replicas, iteraciones)
     resultados <- rbind(resultados, datos)
   }
 }
 stopCluster(cluster)
 
-names(resultados) <- c("Cantidad de puntos", "Tiempo", "Punto", "Iteracion", "Valor")
-resultados$`Cantidad de puntos` <- as.factor(resultados$`Cantidad de puntos`)
+names(resultados) <- c("Pasos", "Tiempo", "Replica", "Dispercion", "Iteracion")
+resultados$Pasos <- as.factor(resultados$Pasos)
 resultados$Tiempo <- as.factor(resultados$Tiempo)
-resultados$Punto <- as.factor(resultados$Punto)
+resultados$Replica <- as.factor(resultados$Replica)
 
 suppressMessages(library(ggplot2))
-ggplot(resultados, aes(Tiempo, Iteracion)) + geom_boxplot() + facet_wrap( ~`Cantidad de puntos`, nrow = 3)
+ggplot(resultados, aes(Tiempo, Dispercion)) + geom_boxplot() + facet_wrap( ~Pasos, nrow = 3)
 ggplot(resultados, aes(`Cantidad de puntos`, Iteracion)) + geom_boxplot() + facet_wrap( ~Tiempo, nrow = 3)
+
+#Esta es la buena.
+varianzapromedio <- aggregate(resultados$Dispercion, list(resultados$Pasos, resultados$Tiempo), FUN = mean)
+names(varianzapromedio) <- c("Pasos", "Iteraciones", "Varianza")
+png(paste("p7.png", sep=""), width=700, height=300)
+ggplot(varianzapromedio, aes(Iteraciones, Varianza, group = Pasos, color = Pasos)) + geom_line() + xlab("Iteraciones") + ylab("Varianza")
+graphics.off()

@@ -7,7 +7,8 @@ maximizar <- function(r) {
   }
   
   contador <- 1
-  dispercionbest <- var(coordenadas$bestgxy)
+  contadores <- numeric()
+  dispercionbest <- sum((coordenadas$bestgxy - wolfram)^2) / puntos
   
   for (tiempo in 1:tmax) {
     tablax <- double()
@@ -52,13 +53,14 @@ maximizar <- function(r) {
       }
     }
     
-    dispercion <- var(coordenadas$bestgxy)
+    dispercion <- sum((coordenadas$bestgxy - wolfram)^2) / puntos
                 
     if (dispercion < dispercionbest) {
       dispercionbest <- dispercion
       contador <- tiempo
     }
   }
+  
   dato <- c(dispercionbest, contador)
   return(dato)
 }
