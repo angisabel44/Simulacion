@@ -9,7 +9,7 @@ low <- -3
 high <- -low
 step <- 0.3
 
-tiempos <- 2^(4:8)
+tiempos <- c(seq(10, 20, 2), 23, 26, 30)
 cantidadpuntos <- c(15, 20, 30, 50)
 
 replicas <- 30
